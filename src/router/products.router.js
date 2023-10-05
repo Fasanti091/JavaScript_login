@@ -1,94 +1,78 @@
 import { Router } from "express";
-import ProductManager from "../manager/ProductManager.js";
+import ProductManager from "../dao/mongo/managers/productsManager.js";
+import uploader from "../services/uploadServices.js";
 
-const managers = new ProductManager('products.json');
 const router = Router();
+const productsService = new ProductManager();                                   //instancio objeto de clase del manager de videogames
 
-router.get('/', async (req, res) => 
-{
-    try {
-        const limit = req.query.limit; 
-        let productos = await managers.getProducts();
+router.get('/', async(req, res)=>{                                                //endpoint para get raiz
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 3;
+    const sort = req.query.sort || 'asc';
+    const category = req.query.category || null; // Capturar el parámetro "category"
+    const status = req.query.status || null;     // Capturar el parámetro "status"
 
-        if (limit) {
-            const parsedLimit = parseInt(limit);
-            if (!isNaN(parsedLimit)) {
-                productos = productos.slice(0, parsedLimit);
-            } else {
-                return res.status(400).json({ error: 'El valor de "limit" debe ser un número entero válido' });
-            }
-        }
+    // Construir un objeto de consulta en función de los parámetros proporcionados
+    const queryObject = {};
 
-        res.json(productos);
-    } catch (error) {
-        console.error("Error al obtener los productos:", error);
-        res.status(500).json({ error: "Error al obtener los productos" });
+    if (category) {
+        queryObject.category = category; // Agregar filtro por categoría si se proporciona
     }
+
+    if (status) {
+        queryObject.status = status; // Agregar filtro por estado si se proporciona
+    }
+
+    const products = await productsService.getProductsPaginated(limit, page, queryObject, sort);
+
+    res.send({status:"success", payload:products});                              //devuelvo todos los videojuegos
 });
 
-router.get("/:pid", async (req,res)=>
-{
-    const producto_id = parseInt(req.params.pid);
-    const productoObjeto = await managers.getProductById(producto_id);
-
-    if(productoObjeto)
+router.post('/', uploader.array('thumbnail'),async(req,res)=>                      //cargo un middlewar intermedio que invoque a mi uploader para trabajar con el archivo que me enviaran
+{       
+    const { title, description, category, code, status, price, stock} = req.body;
+    if(!title || !description || !category || !code || !status || !price || !stock) return res.status(400).send({status:"error",error:"producto incompleto"});
+    const newProduct = 
     {
-        res.json(productoObjeto);
-    }else 
-    {
-        res.status(400).json({error: "producto no existe"});
+        title,
+        description,
+        category,
+        code,
+        status,
+        price,
+        stock
     }
-})
+    const thumbnail = req.files.map(file=>`${req.protocol}://${req.hostname}:${process.env.PORT||8080}/img/${file.filename}`)
+    newProduct.thumbnail = thumbnail;
 
-router.post("/", async (req, res) => {
-    try {
-      const product = await managers.addProduct(req.body);
-      if (product === "The insert code already exists") {
-        res.status(400).json({ message: "Error al crear el producto", product });
-      } else if (product === "Complete all fields") {
-        res.status(400).json({ message: "Error al crear el producto", product });
-      } else {
-
-        const port = process.env.PORT || 8080;
-        const redirectURL = `${req.protocol}://${req.hostname}:${port}/realtimeproducts`;
-        res.redirect(redirectURL);
-      }
-    } catch (error) {
-      throw new error("Error al crear el producto", error);
-    }
-  });
-
-
-router.put("/:pid", async (req, res) => 
-{
-    const producto_id = parseInt(req.params.pid);
-    const updateProducto = req.body;
-
-    try {
-        const productoActualizado = await managers.updateProduct(updateProducto,producto_id);
-
-        res.status(201).json({ status: "success", message: "Producto actualizado satisfactoriamente", product: productoActualizado });
-    } catch (error) {
-        res.status(500).json({ error: "Error al actualizar el producto" });
-    }
+    const result = await productsService.addProduct(newProduct);
+    res.send({status:"success", payload:result._id});
 });
 
-router.delete("/:pid", async (req, res) => 
-{
-    const producto_id = parseInt(req.params.pid);
-
-    try {
-        const productoEliminado = await managers.deleteProduct(producto_id);
-
-        res.status(201).json({ status: "success", message: "Producto eliminado satisfactoriamente", product: productoEliminado });
-
-        const port = process.env.PORT || 8080;
-        const redirectURL = `${req.protocol}://${req.hostname}:${port}/realtimeproducts`;
-        res.redirect(redirectURL);
-    } catch (error) {
-        res.status(500).json({ error: "Error al eliminar el producto" });
+router.put('/:pid', async(req, res)=>{   
+    const {pid} = req.params;
+    const { title, description, category, code, status, price, stock} = req.body;
+    
+    const updateProduct= {
+        title,
+        description,
+        category,
+        code,
+        status,
+        price,
+        stock
     }
+    
+    const product = await productsService.getProductsBy({_id:pid});
+    if(!product) return res.status(400).send({status:"error", error:"Producto incorrecto"});
+    await productsService.updateProduct(pid, updateProduct);
+    res.send({status:"success", message:"producto actualizado"});
 });
 
-
+router.delete('/:pid', async(req, res)=>{  
+    const {pid} = req.params;
+    const result = await productsService.deleteProduct(pid);
+    res.send({status:"success", message:"Producto eliminado"});
+});                      
+                         
 export default router;

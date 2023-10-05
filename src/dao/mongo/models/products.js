@@ -36,8 +36,8 @@ const schema = new mongoose.Schema({          //esquema de carga de datos de mi 
     },
     thumbnail:
     {
-        type: Buffer,
-        require:false
+        type: Array,
+        default: []
     }
 },{timestamps:true}) //cada vez que cree un dato va a agregar cuando se creo y cuando se actualizo por ultima vez por defecto.
 

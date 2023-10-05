@@ -1,27 +1,70 @@
-// router/views.router.js
-import express from 'express';
-import exphbs from 'express-handlebars';
-import ProductManager from "../manager/ProductManager.js";
+import { Router } from "express";
+import ProductManager from "../dao/mongo/managers/productsManager.js";
+import CartsManager from "../dao/mongo/managers/cartsManager.js";
 
-const managers = new ProductManager('products.json');
-const router = express.Router();
-const hbs = exphbs.create();
 
-router.get('/', async (req, res) => {
-  try {
-    const productos = await managers.getProducts();
+const router = Router();
+const cartsService = new CartsManager(); 
+const productsService = new ProductManager();   
 
-    res.render('home', { productos });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Error al cargar la lista de productos');
-  }
+router.get('/products', async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 3;
+    const sort = req.query.sort || 'asc';
+    const category = req.query.category || null; 
+    const status = req.query.status || null;     
+
+    const queryObject = {};
+
+    if (category) queryObject.category = category;
+    if (status) queryObject.status = status; 
+    
+    const products = await productsService.getViewsProducts(limit, page, queryObject, sort);
+
+    res.render('Products', {
+        user:req.session.user,
+        filterProducts: products.filterProducts,
+        page: products.page,
+        hasPrevPage: products.hasPrevPage,
+        hasNextPage: products.hasNextPage,
+        prevPage: products.prevPage,
+        nextPage: products.nextPage,
+        totalPages: products.totalPages
+    });
 });
 
-router.get('/realtimeproducts', async (req, res) => 
-{
-    const productos = await managers.getProducts();
-    res.render('realTimeProducts', { productos }); 
+router.get('/carts/:cid', async (req, res) => {
+    const carrito_id = req.params.cid;
+    const filter = { _id: carrito_id }; // Crea un objeto de filtro con el campo "_id" y el valor del ID
+    const cart = await cartsService.getCartsBy(filter);
+
+    res.render('Carts', {
+        cart
+    });
 });
+
+/*rutas para el sistema de login*/ 
+router.get('/', async(req,res)=>{
+    if(!req.session.user)
+    {
+        return res.redirect('/login');
+    }
+    res.render('profile', {user: req.session.user});
+})
+
+router.get('/register', async(req,res)=>{
+    res.render('register')
+})
+
+router.get('/login', async(req,res)=>{
+    res.render('login')
+})
+
+//JWT views
+
+router.get('/profilejwt', async(req,res)=>{
+    res.render('ProfileJWT', {user: req.session.user});
+})
+
 
 export default router;
