@@ -11,10 +11,9 @@ fetch('/api/sessions/profileInfo',
 }).then(response=>response.json())
 .then(result=>
 {
-    console.log(result);
-    const user = result.payload;
-    const welcome = document.getElementById('welcome');
-    const email = document.getElementById('email');
-    welcome.innerHTML = `Hola, ${user.name}, tu rol es: ${user.role}`;
-    email.innerHTML = `Correo: ${user.email}`
+    const user =result.payload;
+    document.querySelector("#nombre").innerHTML = `bienvenido ${user.name}`;
+    document.querySelector("#apellido").innerHTML = `apellido: ${user.lastName}`;
+    document.querySelector("#edad").innerHTML = `edad: ${user.age}`;
+    document.querySelector("#email").innerHTML = `email: ${user.email}`;
 })

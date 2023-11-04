@@ -1,18 +1,14 @@
 import bcrypt from 'bcrypt';
 
-
-const createHash = async(password) =>{
-    //Primero, definirá las rondas de mezcla que hay con el password
+const createHash = async(password)=>
+{
     const salts = await bcrypt.genSalt(10);
-    //Ahora sí, hasheamos
     return bcrypt.hash(password,salts);
 }
 
-const validatePassword = (password,hashedPassword) =>{
-    return bcrypt.compare(password, hashedPassword);
+const validatePassword = (password, hasedPasswod)=>
+{
+    return bcrypt.compare(password, hasedPasswod);
 }
 
-export default {
-    createHash,
-    validatePassword
-}
+export default {createHash, validatePassword}
