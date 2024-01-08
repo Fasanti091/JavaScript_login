@@ -1,95 +1,186 @@
 import passport from "passport";
-import local from 'passport-local';
-import GithubStrategy from 'passport-github2';
+import { Strategy as LocalStrategy } from "passport-local";
+import { Strategy as JWTStrategy, ExtractJwt } from "passport-jwt";
+import GitHubStrategy from "passport-github2";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 
-import UserManager from "../dao/mongo/managers/userManager.js";
-import auth from "../services/auth.js";
+import { usersService, cartsService } from "../services/index.js";
+import authService from "../services/authService.js";
+import config from "./config.js";
 
+const initializePassportStrategies = () => {
+  passport.use(
+    "register",
+    new LocalStrategy(
+      { passReqToCallback: true, usernameField: "email", session: false },
+      async (req, email, password, done) => {
+        try {
+          const { firstName, lastName, email, password } = req.body;
+          if (!firstName || !lastName || !email || !password)
+            return done(null, false, { message: "Incomplete values" });
 
-//Estrategia local = Registro y Login
-const LocalStrategy = local.Strategy; // Local = username/email + password
+          const exists = await usersService.getUserBy({ email });
+          if (exists)
+            return done(null, false, { message: "User already exists" });
 
-const usersService = new UserManager();
+          const hashedPassword = await authService.createHash(password);
 
-const initializeStrategies = () =>{
-    //¿Qué estrategias instalé?
-
-    //PASSPORT ODIA CUALQUIER COSA QUE NO SEA USERNAME
-    passport.use('register',new LocalStrategy({passReqToCallback:true, usernameField:'email'},async (req,email,password,done)=>{
-        //FINALMENTE meto la lógica de mi registro
-        const {
-            firstName,
-            lastName,
-            age
-        } = req.body;
-        if(!firstName||!email||!password) return done(null,false,{message:"Incomplete values"})
-        //Validar que el usuario no esté registrado ya
-
-        //Aquí va mi validación return done(null,false,{message:"User already exists"})
-
-        //Si ya pasó la validación, antes de crear, hasheo la contraseña
-        const hashedPassword = await auth.createHash(password);
-        const newUser = {
+          const newUser = {
             firstName,
             lastName,
             email,
-            age,
-            password: hashedPassword
+            password: hashedPassword,
+          };
+
+          let cart;
+          if (req.cookies["cart"]) {
+            cart = req.cookies["cart"];
+          } else {
+            const cartResult = await cartsService.createCart();
+            cart = cartResult.id;
+          }
+          newUser.cart = cart;
+
+          const result = await usersService.createUser(newUser);
+          return done(null, result);
+        } catch (error) {
+          console.log(error);
+          return done(error);
         }
-        const result = await usersService.create(newUser);
-        //Si salió bien, SIEMPRE devuelve al user
-        done(null,result)
-    }))
+      }
+    )
+  );
 
-    passport.use('login', new LocalStrategy({usernameField:'email'},async(email,password, done)=>{
-    //Oye, se supone que debe estar registrado ¿no?, entonces hay que buscarlo en la base de datos
-    if(!email||!password) return done(null,false,{message:"Incomplete values"})
-    const user = await usersService.getBy({email})
-    if(!user) return done(null,false,{message:"Incorrect Credentials"})
-    //Ya que existe el usuario, ahora debo comparar las contraseñas
-    const isValidPassword = await auth.validatePassword(password,user.password);
-    if(!isValidPassword) return done(null,false,{message:"Incorrect Credentials"});
+  passport.use(
+    "login",
+    new LocalStrategy(
+      { usernameField: "email", session: false },
+      async (email, password, done) => {
+        try {
+          if (
+            email === config.app.ADMIN_EMAIL &&
+            password === config.app.ADMIN_PASSWORD
+          ) {
+            const adminUser = {
+              role: "admin",
+              id: "0",
+              firstName: "admin",
+            };
+            return done(null, adminUser);
+          }
 
-    //La magia de "done" es devolver al usuario, por lo tanto, no puedo usar req.session aquí
-        done(null,user);
-    }))
+          const user = await usersService.getUserBy({ email });
+          if (!user)
+            return done(null, false, { message: "Invalid Credentials" });
 
-    passport.use('github', new GithubStrategy({
-        clientID:'Iv1.659d3061512319a8',
-        clientSecret:'d3beeffddee24da92a91c1f657c2c377daa8fd84',
-        callbackURL:'http://localhost:8080/api/sessions/githubcallback'
-    },async (accessToken, refreshToken, profile, done)=> {
-        console.log(profile);
-        const {email, name} = profile._json;
-        //Ahora sí, comenzamos a trabajar con NUESTRA base de datos
-        // ¿El usuario ya existía? 
-        const user = await usersService.getBy({email});
-        if(!user){
-            //No existe? LO CREO
-            const newUser = {
-                firstName:name,
-                email,
-                password:''
-            }
-            const result = await usersService.create(newUser);
-            done(null, result);
-        }else {
-            //Sí existe? entonces sólo devuélvelo.
-            done(null,user);
+          const isValidPassword = await authService.validatePassword(
+            password,
+            user.password
+          );
+          if (!isValidPassword)
+            return done(null, false, { message: "Invalid Credentials" });
+          return done(null, user);
+        } catch (error) {
+          console.log(error);
+          return done(error);
         }
-    }))
+      }
+    )
+  );
 
-    //FUTURAS ESTRATEGIAS (FACEBOOK, APPLE, TIKTOK, GITHUB)
+  passport.use(
+    "jwt",
+    new JWTStrategy(
+      {
+        jwtFromRequest: ExtractJwt.fromExtractors([
+          authService.extractAuthToken,
+        ]),
+        secretOrKey: "jwtSecret",
+      },
+      async (payload, done) => {
+        return done(null, payload);
+      }
+    )
+  );
 
-    passport.serializeUser((user,done)=>{
-        return done(null,user._id);
-    });
-    
-    passport.deserializeUser(async(id,done)=>{
-        const user = await usersService.getBy({_id:id});
-        done(null,user);
-    });
+  passport.use(
+    "github",
+    new GitHubStrategy(
+      {
+        clientID: config.github.CLIENT_ID,
+        clientSecret: config.github.CLIENT_SECRET,
+        callbackURL: "http://localhost:8080/api/sessions/githubcallback",
+        // passReqToCallback: true,
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        const email = profile._json.email;
 
-}
+        let user = await usersService.getUserBy({ email });
+        if (!user) {
+          const newUser = {
+            first_name: profile._json.name,
+            last_name: "",
+            age: "",
+            email,
+            password: "",
+            admin: false,
+          };
+          let cart;
 
-export default initializeStrategies;
+          if (req.cookies["cart"]) {
+            cart = req.cookies["cart"];
+          } else {
+            const cartResult = await cartsService.createCart();
+            cart = cartResult.id;
+          }
+
+          newUser.cart = cart;
+          const result = await usersService.createUser(newUser);
+          return done(null, result);
+        } else {
+          return done(null, user);
+        }
+      }
+    )
+  );
+  passport.use(
+    "google",
+    new GoogleStrategy(
+      {
+        clientID: config.google.CLIENT_ID,
+        clientSecret: config.google.CLIENT_SECRET,
+        callbackURL: "http://localhost:8080/api/sessions/googlecallback",
+        // passReqToCallback: true,
+      },
+      async (req, accessToken, refreshToken, profile, done) => {
+        const { _json } = profile;
+        const email = _json.email;
+
+        const user = await usersService.getUserBy({ email: _json.email });
+        if (user) {
+          return done(null, user);
+        } else {
+          const newUser = {
+            firstName: _json.given_name,
+            lastName: _json.family_name,
+            email: _json.email,
+          };
+          let cart;
+
+          if (req.cookies["cart"]) {
+            cart = req.cookies["cart"];
+          } else {
+            const cartResult = await cartsService.createCart();
+            cart = cartResult.id;
+          }
+
+          newUser.cart = cart;
+          const result = await usersService.createUser(newUser);
+          return done(null, result);
+        }
+      }
+    )
+  );
+};
+
+export default initializePassportStrategies;

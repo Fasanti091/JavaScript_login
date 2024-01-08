@@ -1,19 +1,22 @@
-<link rel="stylesheet" href="/css/login.css">
+<h1 class="title">Ingresa</h1>
 
-<section class="cont_login">
-    <div class="form_login">
-        <h1>login</h1>
+<form class="formProducts" id="loginForm">
+  <label class="label">Email</label>
+  <input class="controls" name="email" />
 
-        <form id="loginForm">
-            <input name="email" placeholder="email">
-            <input name="password" type="password" placeholder="password">
-            <input class="submitBtn" type="submit" value="iniciar sesión">
-        </form>
+  <label class="label">Contraseña</label>
+  <input class="controls" name="password" type="password" />
 
-        <p>si aún no estas registrado <a href="/register">click aquí</a>.</p>
-        <p>login mediante <a href="/api/sessions/github">github</a>.</p>
-        <p>login mediante <a href="/api/sessions/google">google</a>.</p>
-    </div>
-</section>
+  <input class="btn btn-success" type="submit" />
+
+  <p>¿Olvidaste tu contraseña? Puedes restablecerla
+  <button
+    class="btn btn-danger w-25"
+    type="button"
+    onclick="restorePassword()"
+  >aqui</button></p>
+</form>
+
+
 
 <script src="/js/login.js"></script>

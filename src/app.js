@@ -1,137 +1,93 @@
-//configuracion para utilizar .env
-import dotenv from 'dotenv';
-dotenv.config();
+import express from "express";
+import { Server } from "socket.io";
+import mongoose from "mongoose";
+import handlebars from "express-handlebars";
+import cookieParser from "cookie-parser";
+import swaggerJSDoc from "swagger-jsdoc";
+import swaggerUIExpress from "swagger-ui-express";
 
-import express from 'express';
-import exphbs from 'express-handlebars';
-import mongoose from 'mongoose';
-import product_mRouter from './router/products_m.router.js';
-import sessionRouter from './router/sessions.router.js';
-import cart_mRouter from './router/carts_m.router.js';
-import __dirname from './utils.js';
-import views_mRouter from './router/views_m.router.js';
-import cookieParser from 'cookie-parser';
-import session from 'express-session';
-//import FileStore from 'session-file-store';
-import MongoStore from 'connect-mongo';
-import passport from 'passport';
-import initializeStrategies from './config/passport.config.js';
-import dictionaryRouter from './router/dictionary.router.js';
-import cors from 'cors';
-import nodemailer from 'nodemailer';
-import errorHandler from './middlewares/errorHandler.js';
-import attachLogger from './middlewares/attachLogger.js';
+import productsRouter from "./routes/ProductsRouter.js";
+import cartsRouter from "./routes/CartRouter.js";
+import viewsRouter from "./routes/ViewsRouter.js";
+import SessionsRouter from "./routes/SessionsRouter.js";
+import chatRouter from "./routes/ChatRoutes.js";
+import usersRouter from "./routes/UsersRouter.js";
 
-//variables de entorno del .env
-const DB_URL = process.env.DB_URL;
-const ENVPORT = process.env.PORT;
-const COOKIEPARSER =  process.env.COOKIEPARSER;
-const GMAIL_USER =  process.env.GMAIL_USER;
-const GMAIL_PASS=  process.env.GMAIL_PASS;
+import __dirname from "./utils.js";
+import config from "./config/config.js";
+import initializePassportStrategies from "./config/passport.config.js";
+import registerChatHandler from "./listeners/chat.listener.js";
 
 const app = express();
-//const FileStorage = FileStore(session);      
-const PORT = ENVPORT || 8080;
-const server = app.listen(PORT, ()=>console.log(`esuchando en puerto ${PORT}`));
-try 
-{
-    const connection = await mongoose.connect(DB_URL, {useNewUrlParser: true,useUnifiedTopology: true});
-    console.log('Conexión a la base de datos exitosa');
-} catch (error) {console.error('Error de conexión a la base de datos:', error);}
 
+const PORT = process.env.PORT || 8081;
 
-//configuracion de handlebars
-const hbs = exphbs.create({
-    helpers: 
-    {
-        sumPrice: function (products) 
-        {
-            let total = 0;
-            for (const product of products) {
-                total += product.f_price * product.f_quantity;
-            }
-            return total;
-        }
-    }
+const connection = mongoose.connect(config.mongo.URL);
+console.log("Base de datos conectada");
+
+const swaggerSpecOptions = {
+  definition: {
+    openapi: "3.0.1",
+    info: {
+      title: "RedBull",
+      description: "Aplicación de RedBull, e-commerce",
+    },
+  },
+  apis: [`${__dirname}/docs/**/*.yml`],
+};
+
+const swaggerSpec = swaggerJSDoc(swaggerSpecOptions);
+app.use(
+  "/api-docs",
+  swaggerUIExpress.serve,
+  swaggerUIExpress.setup(swaggerSpec)
+);
+
+app.engine("handlebars", handlebars.engine());
+app.set("view engine", "handlebars");
+app.set("views", `${__dirname}/views`);
+
+app.use(express.static(`${__dirname}/public`));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+initializePassportStrategies();
+
+//rutas
+app.use("/", viewsRouter);
+app.use("/api/products", productsRouter);
+app.use("/api/carts", cartsRouter);
+app.use("/api/sessions", SessionsRouter);
+app.use("/api/chat", chatRouter);
+app.use("/api/users", usersRouter);
+
+app.use("/loggerTest", async (req, res) => {
+  req.logger.log("fatal", "Logger test fatal");
+  req.logger.log("error", "Logger test error");
+  req.logger.log("warning", "Logger test warning");
+  req.logger.log("info", "Logger test info");
+  req.logger.log("http", "Logger test http");
+  req.logger.log("debug", "Logger test");
+  res.send({ status: 200, message: "Logger test" });
 });
 
-hbs.allowProtoPropertiesByDefault = true;
+app.use((error, req, res, next) => {
+  console.log(error);
+  res.status(500).json({ error: error.message });
+});
 
+const httpServer = app.listen(PORT, () => {
+  console.log(`Servidor escuchando en el puerto ${PORT}`);
+});
 
-app.engine('handlebars', hbs.engine); // Usa hbs.engine en lugar de handlebars.engine()
-app.set('view engine', 'handlebars');
-app.set('views', `${__dirname}/views`);
+const io = new Server(httpServer);
 
+io.on("connection", async (socket) => {
+  console.log("Cliente conectado con id: ", socket.id);
+  registerChatHandler(io, socket);
 
-
-//middlewars'
-app.use(cors({origin:['http://localhost:8080'],credentials:true}));
-app.use(express.json());
-app.use(express.urlencoded({extended:true}));
-app.use(express.static((`${__dirname}/public`)));
-app.use(cookieParser(COOKIEPARSER));
-
-
-//configuracion de passport, ejecucion
-initializeStrategies();
-
-//routes
-app.use('/', views_mRouter);
-app.use('/api/products', product_mRouter);
-app.use('/api/carts', cart_mRouter);
-app.use('/api/sessions', sessionRouter);
-app.use('/api/dictionary', dictionaryRouter);
-
-
-app.get('/mails', async(req,res)=>
-{
-    const transport = nodemailer.createTransport(
-    {
-        service:'gmail',
-        port:587,
-        auth:
-        {
-            user: GMAIL_USER,
-            pass: GMAIL_PASS
-        }
-    })
-
-    const mailRequest = 
-    {
-        from: 'yo mismo',
-        to:['electrohouse136@gmail.com'],
-        subject: 'hola, prueba',
-        html:
-        `
-            <h1>mapaches</h1>
-            <img src="cid:mapache">
-        `,
-        attachments:
-        [
-            {
-                filename: 'mapache.webp',
-                path: './src/public/img/others/mapache.webp'
-            },
-            {
-                filename: 'mapache.webp',
-                path: './src/public/img/others/mapache.webp',
-                cid:'mapache'
-            }
-        ]
-    }
-
-    const mailResult = await transport.sendMail(mailRequest);
-    console.log(mailResult);
-    res.sendStatus(200);
-})
-
- //logger endpoint 
- app.get('/loggerTest', attachLogger, async(req,res)=>
- {
-     logger.log('debug', "prueba logger");
-     logger.log('http', "prueba logger");
-     logger.log('info', "prueba logger");
-     logger.log('error', "prueba logger");
-     logger.log('fatal', "prueba logger");
-     res.sendStatus(200);
- })
+  socket.on("disconnect", () => {
+    console.log(`Usuario con ID : ${socket.id} esta desconectado `);
+  });
+});

@@ -1,6 +1,24 @@
-<h1>Lista de Productos</h1>
-<ul>
-    {{#each productos}}
-        <li>{{this.title}} - {{this.descripcion}}. Precio: ${{this.price}}</li>
-    {{/each}}
-</ul>
+<div class="container">
+
+  <div class="container d-flex flex-column" id="contenedorPadre">
+
+    <div class="row" >
+      <img class="img-logo" src="/img/logo.png" />
+    </div>
+
+    <div class="btnContainerSocial">
+      <a href="/register"><button
+          class="btn btn-success"
+        >Registrarse</button></a>
+
+      <a href="/login"><button class="btn btn-success">Iniciar sesión</button></a>
+
+      <a href="/api/sessions/github"><button class="btn btn-light">Usa tu cuenta
+          GitHub<img class="social-img" src="/img/github.png" /></button></a>
+
+      <a href="/api/sessions/google"><button class="btn btn-light">Usa tu cuenta
+          Google<img class="social-img" src="/img/google.png" /></button></a>
+
+    </div>
+  </div>
+</div>
